@@ -38,13 +38,16 @@ class AgentExecutor:
                 reasoning_trace=plan.reasoning
             )
 
-        # 3. Package conversational history into the execution context
+        # 3. Combine the instructions and document context into the payload
+        if extracted_text:
+            payload = f"{user_query}\n\n[Extracted Document Context]:\n{extracted_text}"
+        else:
+            payload = user_query
+
         execution_context = {"history": history}
 
         try:
-            payload = extracted_text if extracted_text else user_query
-            
-            # Run the tool with context awareness
+            # Run the tool with unified payload & context awareness
             result = await tool.execute(payload, context=execution_context)
             
             return AgentResponse(
