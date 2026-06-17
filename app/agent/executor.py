@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from pydantic import BaseModel
 from app.agent.planner import plan_task, ChatMessage
 from app.tools.registry import registry
@@ -12,7 +12,7 @@ class AgentResponse(BaseModel):
 class AgentExecutor:
     @staticmethod
     async def run(user_query: str, extracted_text: str = "", history: List[ChatMessage] = []) -> AgentResponse:
-        # Pass history to help resolve follow-up replies
+        # 1. Determine action plan
         try:
             plan = await plan_task(user_query, extracted_text, history)
         except Exception as e:
@@ -22,10 +22,11 @@ class AgentExecutor:
                 reasoning_trace="Failed to analyze user intent."
             )
 
+        # 2. Handle clarification requests
         if not plan.is_clear:
             return AgentResponse(
                 status="clarify",
-                output=plan.follow_up_question or "Could you clarify what you would like me to do with this input?",
+                output=plan.follow_up_question or "Could you clarify what you would like me to do?",
                 reasoning_trace=plan.reasoning
             )
 
@@ -33,21 +34,19 @@ class AgentExecutor:
         if not tool:
             return AgentResponse(
                 status="error",
-                output=f"Tool '{plan.selected_tool}' was planned but is not registered.",
+                output=f"Tool '{plan.selected_tool}' is not registered.",
                 reasoning_trace=plan.reasoning
             )
 
+        # 3. Package conversational history into the execution context
+        execution_context = {"history": history}
+
         try:
-            # If the user is responding to code previously sent, find that context
             payload = extracted_text if extracted_text else user_query
-            if not payload and history:
-                # Fallback to search past user inputs if current payload is brief response
-                for msg in reversed(history):
-                    if msg.role == "user" and len(msg.content) > 10:
-                        payload = msg.content
-                        break
             
-            result = await tool.execute(payload)
+            # Run the tool with context awareness
+            result = await tool.execute(payload, context=execution_context)
+            
             return AgentResponse(
                 status="success",
                 output=result,

@@ -3,9 +3,9 @@ from google import genai
 from google.genai import types
 from app.tools.base import BaseTool
 from app.config import settings
+from app.utils.retry import execute_with_retry
 
 # Initialize the modern Gemini Client
-# It automatically picks up GEMINI_API_KEY from your environment/.env
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 class ConversationalTool(BaseTool):
@@ -22,9 +22,31 @@ class ConversationalTool(BaseTool):
             system_instruction="You are a friendly and helpful conversational assistant.",
             temperature=0.7
         )
-        response = await client.aio.models.generate_content(
+
+        contents = []
+        if context and "history" in context:
+            # Build structured Content blocks for past conversation turns
+            for msg in context["history"][-6:]:
+                role = "user" if msg.role == "user" else "model"
+                contents.append(
+                    types.Content(
+                        role=role,
+                        parts=[types.Part.from_text(text=msg.content)]
+                    )
+                )
+
+        # Append the current query block
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=input_text)]
+            )
+        )
+
+        response = await execute_with_retry(
+            client.aio.models.generate_content,
             model=settings.GEMINI_MODEL,
-            contents=input_text,
+            contents=contents,
             config=config
         )
         return response.text.strip()
@@ -54,7 +76,9 @@ class SummarizeTool(BaseTool):
             system_instruction=system_prompt,
             temperature=0.3
         )
-        response = await client.aio.models.generate_content(
+        # Execute with exponential backoff if 429 rate limit is hit
+        response = await execute_with_retry(
+            client.aio.models.generate_content,
             model=settings.GEMINI_MODEL,
             contents=input_text,
             config=config
@@ -82,7 +106,9 @@ class SentimentTool(BaseTool):
             system_instruction=system_prompt,
             temperature=0.1
         )
-        response = await client.aio.models.generate_content(
+        # Execute with exponential backoff if 429 rate limit is hit
+        response = await execute_with_retry(
+            client.aio.models.generate_content,
             model=settings.GEMINI_MODEL,
             contents=input_text,
             config=config
@@ -111,7 +137,9 @@ class CodeExplainTool(BaseTool):
             system_instruction=system_prompt,
             temperature=0.2
         )
-        response = await client.aio.models.generate_content(
+        # Execute with exponential backoff if 429 rate limit is hit
+        response = await execute_with_retry(
+            client.aio.models.generate_content,
             model=settings.GEMINI_MODEL,
             contents=input_text,
             config=config
