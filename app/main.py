@@ -1,56 +1,77 @@
+import json
 import webbrowser
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from typing import List, Optional
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.responses import HTMLResponse
+from pydantic import TypeAdapter
 
 from app.tools.registry import registry
-from app.tools.text_tools import ConversationalTool, SummarizeTool, SentimentTool, CodeExplainTool
-from app.agent.executor import AgentExecutor, AgentResponse
+from app.agent.executor import AgentExecutor, AgentResponse, ChatMessage
+from app.utils.extractor import extract_text_from_file
 
-# Register tools at module load
-registry.register(ConversationalTool())
-registry.register(SummarizeTool())
-registry.register(SentimentTool())
-registry.register(CodeExplainTool())
-
-# Lifecycle manager to automatically open browser on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Open browser in a new tab
     url = "http://127.0.0.1:8000"
     print(f"\n🚀 Launching interface at {url} ...\n")
     webbrowser.open_new_tab(url)
-    yield
-    # Shutdown logic can go here if needed
+    v = yield
 
 app = FastAPI(title="Multi-Modal Agent Backend", lifespan=lifespan)
 
-# Conversation history schema
-class ChatMessage(BaseModel):
-    role: str  # "user" or "assistant"
-    content: str
-
-class ChatRequest(BaseModel):
-    query: str
-    extracted_text: Optional[str] = ""
-    history: List[ChatMessage] = []
+chat_history_adapter = TypeAdapter(List[ChatMessage])
 
 @app.post("/api/chat", response_model=AgentResponse)
-async def process_chat(request: ChatRequest):
-    if not request.query.strip() and not request.extracted_text.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty.")
-    
-    # We pass history through to the executor
+async def process_chat(
+    query: str = Form(...),
+    history: str = Form("[]"),
+    files: Optional[List[UploadFile]] = File(None)
+):
+    try:
+        parsed_history = chat_history_adapter.validate_json(history)
+    except Exception:
+        parsed_history = []
+
+    extracted_contents = []
+
+    if files:
+        for file in files:
+            if file.filename:
+                file_text = await extract_text_from_file(file)
+                
+                # OCR Fallback
+                if file.filename.lower().endswith(".pdf") and not file_text.strip():
+                    from google.genai import types
+                    from google import genai
+                    from app.config import settings
+                    
+                    print(f"Programmatic PDF parsing yielded nothing for {file.filename}. Triggering OCR fallback...")
+                    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                    
+                    await file.seek(0)
+                    pdf_bytes = await file.read()
+                    
+                    response = await client.aio.models.generate_content(
+                        model=settings.GEMINI_MODEL,
+                        contents=[
+                            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                            "Perform complete OCR on this document and transcribe all text perfectly."
+                        ]
+                    )
+                    file_text = response.text.strip()
+
+                if file_text.strip():
+                    extracted_contents.append(f"--- Extracted from {file.filename} ---\n{file_text}")
+
+    combined_extracted_text = "\n\n".join(extracted_contents)
+
     response = await AgentExecutor.run(
-        user_query=request.query, 
-        extracted_text=request.extracted_text,
-        history=request.history
+        user_query=query, 
+        extracted_text=combined_extracted_text,
+        history=parsed_history
     )
     return response
 
-# Serve the HTML UI at the root route
 @app.get("/", response_class=HTMLResponse)
 def get_ui():
     with open("app/templates/index.html", "r", encoding="utf-8") as f:
