@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Assistant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar behaviors */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-[#212121] text-gray-100 font-sans flex h-screen overflow-hidden">
+
+    <!-- Main Chat Workspace -->
+    <div class="flex-1 flex flex-col h-full relative">
+        
+        <!-- Header -->
+        <header class="border-b border-[#3c3d3e] px-6 py-4 flex items-center justify-between bg-[#2f2f2f]">
+            <h1 class="text-lg font-semibold tracking-wide">Agentic Workspace</h1>
+            <span class="text-xs px-2 py-1 bg-green-950 text-green-400 border border-green-800 rounded-full">Gemini Connected</span>
+        </header>
+
+        <!-- Messages Container -->
+        <div id="chat-feed" class="flex-1 overflow-y-auto px-4 py-6 md:px-24 space-y-6">
+            
+            <!-- Default Welcome Message -->
+            <div class="flex items-start gap-4 max-w-3xl mx-auto">
+                <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold shrink-0 text-sm">A</div>
+                <div class="bg-[#2f2f2f] rounded-2xl px-4 py-3 shadow-md max-w-[85%] border border-[#3c3d3e]">
+                    <p class="text-sm leading-relaxed">Hello! I am your agentic assistant. You can ask me conversational questions, paste code blocks to explain, request text summaries, or do sentiment analysis. Try typing naturally!</p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Input Area Footer -->
+        <footer class="p-4 md:px-24 border-t border-[#3c3d3e] bg-[#212121]">
+            <div class="max-w-3xl mx-auto relative flex flex-col gap-2">
+                <div class="flex items-center bg-[#2f2f2f] rounded-2xl border border-[#3c3d3e] shadow-lg overflow-hidden px-4 py-3">
+                    <textarea id="user-input" rows="1" placeholder="Type your request here..." class="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-sm resize-none text-gray-100 placeholder-gray-500 max-h-32" oninput="autoGrow(this)" onkeydown="checkSubmit(event)"></textarea>
+                    <button onclick="sendMessage()" class="ml-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200 shadow-md">
+                        Send
+                    </button>
+                </div>
+                <div class="text-[10px] text-gray-500 text-center">
+                    Multi-Modal Agent • Phase 1 Core Active
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Right Sidebar for Reasoning / Trace -->
+    <div class="w-80 border-l border-[#3c3d3e] bg-[#171717] flex flex-col h-full shrink-0">
+        <div class="px-4 py-4 border-b border-[#3c3d3e] flex items-center justify-between">
+            <h2 class="text-sm font-semibold tracking-wide text-gray-300">Agent Reasoning Logs</h2>
+        </div>
+        <div id="log-feed" class="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-mono text-gray-400">
+            <div class="italic text-gray-600">Waiting for requests to analyze...</div>
+        </div>
+    </div>
+
+    <!-- Frontend logic handling Conversational History and UI states -->
+    <script>
+        const chatFeed = document.getElementById('chat-feed');
+        const userInput = document.getElementById('user-input');
+        const logFeed = document.getElementById('log-feed');
+        
+        // Conversational memory tracker matching Backend's ChatMessage format
+        let chatHistory = [];
+
+        function autoGrow(element) {
+            element.style.height = "auto";
+            element.style.height = (element.scrollHeight) + "px";
+        }
+
+        function checkSubmit(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function appendMessage(role, content) {
+            const isUser = role === 'user';
+            const initial = isUser ? 'U' : 'A';
+            const bubbleBg = isUser ? 'bg-[#3a3a3c] border-transparent' : 'bg-[#2f2f2f] border-[#3c3d3e]';
+            const avatarBg = isUser ? 'bg-teal-600' : 'bg-indigo-600';
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex items-start gap-4 max-w-3xl mx-auto ${isUser ? 'flex-row-reverse' : ''}`;
+            
+            messageDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center text-white font-bold shrink-0 text-sm shadow-sm">${initial}</div>
+                <div class="${bubbleBg} border rounded-2xl px-4 py-3 shadow-md max-w-[85%]">
+                    <p class="text-sm leading-relaxed whitespace-pre-wrap">${content}</p>
+                </div>
+            `;
+            chatFeed.appendChild(messageDiv);
+            chatFeed.scrollTop = chatFeed.scrollHeight;
+        }
+
+        function appendLoadingIndicator() {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = 'loading-indicator';
+            loadingDiv.className = 'flex items-start gap-4 max-w-3xl mx-auto';
+            loadingDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold shrink-0 text-sm animate-pulse">A</div>
+                <div class="bg-[#2f2f2f] border border-[#3c3d3e] rounded-2xl px-4 py-3 shadow-md">
+                    <div class="flex items-center gap-1.5 py-1">
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                    </div>
+                </div>
+            `;
+            chatFeed.appendChild(loadingDiv);
+            chatFeed.scrollTop = chatFeed.scrollHeight;
+        }
+
+        function removeLoadingIndicator() {
+            const indicator = document.getElementById('loading-indicator');
+            if (indicator) indicator.remove();
+        }
+
+        function updateLogs(reasoning, toolUsed) {
+            logFeed.innerHTML = `
+                <div class="p-3 bg-[#262626] rounded-xl border border-[#3c3d3e] space-y-2">
+                    <div class="text-indigo-400 font-semibold text-[10px] uppercase tracking-wider">Latest Action</div>
+                    <div><span class="text-gray-500">Selected Tool:</span> <span class="text-green-400 font-bold">${toolUsed || 'None (Follow-up)'}</span></div>
+                    <div class="text-gray-500 mt-2">Reasoning Trail:</div>
+                    <div class="leading-relaxed text-gray-300 mt-1">${reasoning}</div>
+                </div>
+            ` + logFeed.innerHTML;
+        }
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            // Append user message to UI and local state tracker
+            appendMessage('user', text);
+            userInput.value = '';
+            userInput.style.height = "auto";
+
+            appendLoadingIndicator();
+
+            try {
+                // Post payload containing user query and accumulated history
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: text,
+                        history: chatHistory
+                    })
+                });
+
+                const data = await response.json();
+                removeLoadingIndicator();
+
+                if (response.ok) {
+                    appendMessage('assistant', data.output);
+                    updateLogs(data.reasoning_trace, data.tool_used);
+                    
+                    // Maintain conversational memory in UI state
+                    chatHistory.push({ role: 'user', content: text });
+                    chatHistory.push({ role: 'assistant', content: data.output });
+
+                    // Maintain rolling limit of 8 messages to stay within token boundaries
+                    if (chatHistory.length > 8) {
+                        chatHistory.shift();
+                        chatHistory.shift();
+                    }
+                } else {
+                    appendMessage('assistant', `Error: ${data.detail || 'An unexpected error occurred.'}`);
+                }
+            } catch (err) {
+                removeLoadingIndicator();
+                appendMessage('assistant', `Failed to connect to the backend server: ${err.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

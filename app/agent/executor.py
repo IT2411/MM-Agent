@@ -1,20 +1,20 @@
-from typing import Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from app.agent.planner import plan_task
+from app.agent.planner import plan_task, ChatMessage
 from app.tools.registry import registry
 
 class AgentResponse(BaseModel):
-    status: str  # "clarify" or "success" or "error"
+    status: str
     output: str
     reasoning_trace: str
-    tool_used: str = None
+    tool_used: Optional[str] = None
 
 class AgentExecutor:
     @staticmethod
-    async def run(user_query: str, extracted_text: str = "") -> AgentResponse:
-        # Step 1: Detect intent and construct plan
+    async def run(user_query: str, extracted_text: str = "", history: List[ChatMessage] = []) -> AgentResponse:
+        # Pass history to help resolve follow-up replies
         try:
-            plan = await plan_task(user_query, extracted_text)
+            plan = await plan_task(user_query, extracted_text, history)
         except Exception as e:
             return AgentResponse(
                 status="error",
@@ -22,7 +22,6 @@ class AgentExecutor:
                 reasoning_trace="Failed to analyze user intent."
             )
 
-        # Step 2: Handle ambiguity (Mandatory Follow-up Question rule)
         if not plan.is_clear:
             return AgentResponse(
                 status="clarify",
@@ -30,7 +29,6 @@ class AgentExecutor:
                 reasoning_trace=plan.reasoning
             )
 
-        # Step 3: Run the selected tool
         tool = registry.get_tool(plan.selected_tool)
         if not tool:
             return AgentResponse(
@@ -40,8 +38,15 @@ class AgentExecutor:
             )
 
         try:
-            # For now, pass whichever input content holds the payload
+            # If the user is responding to code previously sent, find that context
             payload = extracted_text if extracted_text else user_query
+            if not payload and history:
+                # Fallback to search past user inputs if current payload is brief response
+                for msg in reversed(history):
+                    if msg.role == "user" and len(msg.content) > 10:
+                        payload = msg.content
+                        break
+            
             result = await tool.execute(payload)
             return AgentResponse(
                 status="success",
