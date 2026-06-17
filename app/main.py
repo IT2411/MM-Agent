@@ -1,5 +1,4 @@
 import json
-import webbrowser
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -12,10 +11,12 @@ from app.utils.extractor import extract_text_from_file
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Print a prominent, clickable link in the terminal on startup
     url = "http://127.0.0.1:8000"
-    print(f"\n🚀 Launching interface at {url} ...\n")
-    webbrowser.open_new_tab(url)
-    v = yield
+    print("\n" + "="*60)
+    print(f"👉 Click here to open the Agentic Workspace: {url}")
+    print("="*60 + "\n")
+    yield
 
 app = FastAPI(title="Multi-Modal Agent Backend", lifespan=lifespan)
 
@@ -23,8 +24,9 @@ chat_history_adapter = TypeAdapter(List[ChatMessage])
 
 @app.post("/api/chat", response_model=AgentResponse)
 async def process_chat(
-    query: str = Form(...),
+    query: str = Form(""),
     history: str = Form("[]"),
+    extracted_text: str = Form(""),  # Accept historical context from client
     files: Optional[List[UploadFile]] = File(None)
 ):
     try:
@@ -32,9 +34,11 @@ async def process_chat(
     except Exception:
         parsed_history = []
 
-    extracted_contents = []
+    combined_extracted_text = ""
 
+    # If new files are uploaded, parse them
     if files:
+        extracted_contents = []
         for file in files:
             if file.filename:
                 file_text = await extract_text_from_file(file)
@@ -62,14 +66,19 @@ async def process_chat(
 
                 if file_text.strip():
                     extracted_contents.append(f"--- Extracted from {file.filename} ---\n{file_text}")
-
-    combined_extracted_text = "\n\n".join(extracted_contents)
+        combined_extracted_text = "\n\n".join(extracted_contents)
+    else:
+        # Fallback to historical document context passed by the client
+        combined_extracted_text = extracted_text
 
     response = await AgentExecutor.run(
         user_query=query, 
         extracted_text=combined_extracted_text,
         history=parsed_history
     )
+    
+    # Send the combined text back to the client to preserve state
+    response.extracted_text = combined_extracted_text
     return response
 
 @app.get("/", response_class=HTMLResponse)

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.agent.planner import plan_task, ChatMessage
 from app.tools.registry import registry
@@ -8,11 +8,11 @@ class AgentResponse(BaseModel):
     output: str
     reasoning_trace: str
     tool_used: Optional[str] = None
+    extracted_text: Optional[str] = ""  # Return extracted text back to frontend
 
 class AgentExecutor:
     @staticmethod
     async def run(user_query: str, extracted_text: str = "", history: List[ChatMessage] = []) -> AgentResponse:
-        # 1. Determine action plan
         try:
             plan = await plan_task(user_query, extracted_text, history)
         except Exception as e:
@@ -22,12 +22,12 @@ class AgentExecutor:
                 reasoning_trace="Failed to analyze user intent."
             )
 
-        # 2. Handle clarification requests
         if not plan.is_clear:
             return AgentResponse(
                 status="clarify",
                 output=plan.follow_up_question or "Could you clarify what you would like me to do?",
-                reasoning_trace=plan.reasoning
+                reasoning_trace=plan.reasoning,
+                extracted_text=extracted_text  # Retain context during clarifications
             )
 
         tool = registry.get_tool(plan.selected_tool)
@@ -38,28 +38,22 @@ class AgentExecutor:
                 reasoning_trace=plan.reasoning
             )
 
-        # 3. Combine the instructions and document context into the payload
-        if extracted_text:
-            payload = f"{user_query}\n\n[Extracted Document Context]:\n{extracted_text}"
-        else:
-            payload = user_query
-
-        execution_context = {"history": history}
-
         try:
-            # Run the tool with unified payload & context awareness
-            result = await tool.execute(payload, context=execution_context)
+            payload = f"{user_query}\n\n[Extracted Document Context]:\n{extracted_text}" if extracted_text else user_query
+            result = await tool.execute(payload, context={"history": history})
             
             return AgentResponse(
                 status="success",
                 output=result,
                 reasoning_trace=f"Planner reasoning: {plan.reasoning}\nExecuted tool: {tool.name}",
-                tool_used=tool.name
+                tool_used=tool.name,
+                extracted_text=extracted_text  # Retain context on successful runs
             )
         except Exception as e:
             return AgentResponse(
                 status="error",
                 output=f"Execution error while running {tool.name}: {str(e)}",
                 reasoning_trace=plan.reasoning,
-                tool_used=tool.name
+                tool_used=tool.name,
+                extracted_text=extracted_text
             )

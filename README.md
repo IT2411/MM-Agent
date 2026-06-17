@@ -1,72 +1,43 @@
 
-# Agentic Workspace - Phase 2 (Document Analysis & Robustness Core)
+# Multi-Modal Agentic Workspace
 
-An extensible, agentic web application designed to handle unstructured multi-input analysis, orchestrate task-specific tools, manage conversation state, and securely parse uploaded files (PDF, DOCX, CSV). This platform is built using **FastAPI** for the backend engine and integrates with Google’s official **`google-genai` SDK** (configured for `gemini-3.1-flash-lite`).
+An extensible, agentic web application designed to analyze unstructured multi-input sources (Text, Documents, Images, Audio, and YouTube URLs), orchestrate task-specific tools, manage stateful conversation memory across turns, and execute complex multi-step reasoning chains.
 
----
-
-## 1. Feature Map vs. Evaluation Rubric
-
-This implementation is structured directly around the assignment evaluation criteria:
-
-- **Autonomy & Planning (20 Points)**: The agent planner inspects both incoming files and text queries, decides whether more context is required, and dynamically routes to the appropriate tool using structured JSON mode.
-- **Robustness & Error Handling (15 Points)**:
-  - *Automatic Retry Engine*: Implements exponential backoff retries to handle `429 RESOURCE_EXHAUSTED` rate limits gracefully.
-  - *Graceful Document Degradation*: Parser exceptions (such as corrupted files, old `.doc` formats, or structural issues) are caught safely. The server remains online, logging the error and informing the user gracefully instead of returning an HTTP 500 crash.
-  - *OCR Fallback*: If programmatic PDF parsing returns empty text (e.g. scanned documents), the system falls back to Gemini's native document processing to extract the text using vision.
-- **Explainability (10 Points)**: Every action displays the agent's step-by-step reasoning trail and tool trace inside a dedicated UI logging panel.
-- **UX & Conversational Memory (10 Points)**: Features a responsive ChatGPT-style interface that maintains rolling conversational history, allowing natural follow-up questions to resolve pronouns and ellipsis contextually.
+Built using **FastAPI** for the backend engine and integrated with Google’s official, modern **`google-genai` SDK** (configured for `gemini-3.1-flash-lite`).
 
 ---
 
-## 2. Project Directory Structure
+## 1. Project Directory Structure
 
 ```text
 MM-Agent/
 ├── app/
-│   ├── config.py           # Configuration and environment loaders
-│   ├── main.py             # FastAPI multipart form endpoints & UI routes
+│   ├── config.py           # Configuration and environment variable loaders
+│   ├── main.py             # FastAPI multipart form endpoints & static UI routing
 │   ├── agent/
-│   │   ├── planner.py      # Conversation-aware intent & planning loop
-│   │   └── executor.py     # Context-aware tool execution pipeline
+│   │   ├── planner.py      # Conversation-aware intent evaluation & safeguard loop
+│   │   └── executor.py     # Context-aware unified payload execution engine
 │   ├── templates/
-│   │   └── index.html      # Responsive ChatGPT-style frontend UI
+│   │   └── index.html      # Responsive ChatGPT-style HTML5/JS frontend UI
 │   ├── utils/
-│   │   ├── extractor.py    # Robust text & table extractor (PDF, DOCX, CSV)
-│   │   └── retry.py        # Exponential backoff auto-retry wrapper
+│   │   ├── extractor.py    # Robust multimodal extractor (PDF, DOCX, CSV, TXT, Images, Audio)
+│   │   └── retry.py        # Exponential backoff auto-retry wrapper (Robustness)
 │   └── tools/
-│       ├── base.py         # Abstract base classes for custom tools
+│       ├── base.py         # Abstract base class definitions
 │       ├── registry.py     # Self-initializing tool registry singleton
-│       └── text_tools.py   # Context-aware text tools (Conversational, Summarize, etc.)
-├── .env                    # Environment variables (ignored by Git)
+│       └── text_tools.py   # Context-aware text tools (Conversational, Summarize, Sentiment, Code, YouTube)
+├── .env                    # System secrets (ignored by Git)
 ├── .gitignore              # Git ignore rules
-├── requirements.txt        # Backend dependencies
+├── requirements.txt        # System requirements and library dependencies
 └── README.md               # System documentation
 ```
 
 ---
 
-## 3. Installed Core Tools
-
-1. **Conversational Answering (`conversational_answering`)**
-   - *Context-Aware*: Receives conversation history to handle follow-up queries naturally.
-2. **Summarization (`summarization`)**
-   - *Strict Format*: Outputs exactly a 1-line summary, 3 bullet points, and a 5-sentence paragraph.
-3. **Sentiment Analysis (`sentiment_analysis`)**
-   - *Output*: Provides a sentiment classification label, confidence score, and one-line justification.
-4. **Code Explanation (`code_explanation`)**
-   - *Output*: Identifies syntax, explains functionality, checks for vulnerabilities, and outlines Big O complexity.
-
----
-
-## 4. Setup & Installation
-
-### Prerequisites
-- **Python**: Version `3.10`
-- **Gemini API Key**: Generated from Google AI Studio.
+## 2. Setup & Installation
 
 ### Step 1: Virtual Environment Preparation
-Create and activate a clean virtual environment:
+Create and activate a clean virtual environment using Python 3.10:
 
 - **Windows**:
   ```bash
@@ -86,7 +57,7 @@ pip install -r requirements.txt
 ```
 
 ### Step 3: Configure Environment Variables
-Create a `.env` file in the root folder of the project:
+Create a file named `.env` in the root folder of the project:
 ```env
 GEMINI_API_KEY=your_actual_gemini_api_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite
@@ -94,26 +65,59 @@ GEMINI_MODEL=gemini-3.1-flash-lite
 
 ---
 
-## 5. Running the Application
+## 4. Running the Application
 
-To start the server and automatically launch the UI:
+Start the local server using Uvicorn:
 ```bash
 uvicorn app.main:app --reload
 ```
-Once initialized, your default web browser will automatically open to **`http://127.0.0.1:8000`**.
+Once Uvicorn compiles, the lifespan listener will print confirmation logs prints the link to the chat interface in ther terminal.
+```bash
+👉 Click here to open the Agentic Workspace: http://127.0.0.1:8000
+```
 
 ---
 
-## 6. Verification and Verification Scenarios
+## 5. Verification Scenarios & Test Cases
 
-### Test Scenario A: Conversational Memory & Pronoun Resolution
-1. **Input**: `"Who was the first person to walk on the moon?"`
-2. **Output**: Neil Armstrong.
-3. **Input**: `"Who was the second?"`
-4. **Output**: Buzz Aldrin. (Verifies that both the planner and tool correctly utilize history context to resolve ellipsis references).
+Verify your installation using the core scenarios defined in the guidelines:
 
-### Test Scenario B: Document Upload & Native Parsing
-(**Note**: The doc/docx files require more testing)
-1. **Action**: Attach a compliant `.pdf`, `.docx`, or `.csv` file using the paperclip icon.
-2. **Input**: `"Summarize this paper in short."`
-3. **Output**: The right sidebar logs the parsing trace, and the summary displays in the main chat.
+### Test Case 1: Audio Transcription + Summary
+- **Input**: Upload an `.mp3`, `.wav`, or `.m4a` file.
+- **Query**: `"Summarize this audio."`
+- **Output**: The summarization tool generates a structured summary with the precise calculated audio duration appended at the very end.
+
+### Test Case 2: PDF + Natural Language Query (Action Items)
+- **Input**: Upload `Meeting-Notes.pdf`.
+- **Query**: `"What are the action items?"`
+- **Output**: The planner bypasses the summary tool and routes directly to the conversational answering tool to extract and output **only** the list of action items.
+
+### Test Case 3: Image with Code (OCR + Explanation)
+- **Input**: Upload a screenshot of a code snippet (`code_snippet.png`).
+- **Query**: `"Explain"`
+- **Output**: The vision OCR extracts the text, detects Python, and outputs the detailed logic explanation, bug/vulnerability warnings, and time/space complexity.
+
+### Test Case 4: Cross-Input Multi-Tool Chain (PDF with YouTube URL)
+- **Input**: Upload a PDF containing a YouTube link.
+- **Query**: `"Hit the YT URL in this PDF and give me a summary of it."`
+- **Output**: The agent parses the PDF, extracts the YouTube URL, downloads the transcript via the YouTube tool, and programmatically dispatches the `SummarizeTool` to generate the strict 3-part summary.
+
+### Test Case 5: Multi-File Unified Query (Audio + PDF Comparison)
+- **Input**: Upload an audio file and a PDF resume.
+- **Query**: `"Do the audio and the document discuss the same topic?"`
+- **Output**: The agent transcribes the audio, extracts the PDF text, compares their semantic themes, and writes a detailed comparative analysis in English.
+
+### Test Case 6: Mandatory Follow-Up Question (Ambiguity Handling)
+- **Input**: Upload a document file with **no text query** in the box.
+- **Output**: The programmatic check intercepts the request. The agent immediately outputs the mandatory follow-up question asking what you would like to do with the extracted content.
+- **Follow-up**: Type *"summarize"* (without uploading the file again). The client automatically re-submits the retained text in the form, and the agent completes the summary successfully.
+
+### Test Case 7: Image/PDF Text Extraction with OCR Confidence
+- **Input**: Upload an image receipt.
+- **Query**: `"Extract the text from this image."`
+- **Output**: The agent transcribes the text and appends the estimated character OCR confidence rating.
+
+### Test Case 8: Sentiment Analysis
+- **Input**: Upload `feedback.txt`.
+- **Query**: `"Analyze the sentiment of this feedback."`
+- **Output**: The agent reads the text content and outputs the Sentiment Label, Confidence Score, and One-Line Justification in English.

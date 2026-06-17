@@ -4,30 +4,74 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agentic Workspace</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        /* Custom scrollbar behaviors */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body class="bg-[#212121] text-gray-100 font-sans flex h-screen overflow-hidden">
 
     <!-- Main Chat Workspace -->
     <div class="flex-1 flex flex-col h-full relative">
+        
+        <!-- Header -->
         <header class="border-b border-[#3c3d3e] px-6 py-4 flex items-center justify-between bg-[#2f2f2f]">
             <h1 class="text-lg font-semibold tracking-wide">Agentic Workspace</h1>
-            <span class="text-xs px-2 py-1 bg-green-950 text-green-400 border border-green-800 rounded-full">Documents Active</span>
+            <span class="text-xs px-2 py-1 bg-green-950 text-green-400 border border-green-800 rounded-full">Multimodal Active</span>
         </header>
 
         <!-- Messages Container -->
         <div id="chat-feed" class="flex-1 overflow-y-auto px-4 py-6 md:px-24 space-y-6">
+            
+            <!-- Default Welcome Message -->
             <div class="flex items-start gap-4 max-w-3xl mx-auto">
                 <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold shrink-0 text-sm">A</div>
-                <div class="bg-[#2f2f2f] rounded-2xl px-4 py-3 shadow-md max-w-[85%] border border-[#3c3d3e]">
-                    <p class="text-sm leading-relaxed">Hello! I can now read documents as well. Feel free to upload **PDFs, Word files (.docx), or CSVs** using the attachment button below!</p>
+                <div class="bg-[#2f2f2f] rounded-2xl px-5 py-4 shadow-md max-w-[85%] border border-[#3c3d3e] space-y-3">
+                    <p class="text-sm font-semibold text-indigo-400">Hello! I am your Multi-Modal Agentic Assistant (powered by Gemini).</p>
+                    <p class="text-xs leading-relaxed text-gray-300">
+                        I am fully equipped to handle unstructured tasks across multiple media types simultaneously. You can upload files using the attachment button (📎) and write queries in natural language.
+                    </p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 text-xs">
+                        <!-- Supported Inputs -->
+                        <div class="space-y-1">
+                            <span class="font-bold text-gray-200">📁 Supported Inputs:</span>
+                            <ul class="list-disc list-inside text-gray-400 space-y-1">
+                                <li>📄 Docs: PDF, DOCX, CSV</li>
+                                <li>🖼️ Images: PNG, JPG, JPEG (OCR)</li>
+                                <li>🎵 Audio: MP3, WAV, M4A</li>
+                                <li>🔗 Links: YouTube Video URLs</li>
+                            </ul>
+                        </div>
+                        <!-- Core Tools -->
+                        <div class="space-y-1">
+                            <span class="font-bold text-gray-200">🛠️ Active Agent Tools:</span>
+                            <ul class="list-disc list-inside text-gray-400 space-y-1">
+                                <li>💬 Conversational Chat (Memory)</li>
+                                <li>📝 Strict 3-Format Summaries</li>
+                                <li>📊 Sentiment Tone Analysis</li>
+                                <li>💻 Code bug & complexity review</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <p class="text-[11px] italic text-gray-500 pt-1 border-t border-[#3c3d3e]">
+                        Try uploading an audio lecture and asking for a summary, or upload a code screenshot to explain!
+                    </p>
                 </div>
             </div>
+
         </div>
 
         <!-- Input Area Footer -->
@@ -40,8 +84,8 @@
                 <!-- Input box -->
                 <div class="flex items-center bg-[#2f2f2f] rounded-2xl border border-[#3c3d3e] shadow-lg overflow-hidden px-4 py-3">
                     
-                    <!-- File input element hidden -->
-                    <input type="file" id="file-input" multiple accept=".pdf,.docx,.csv,.png,.jpg,.jpeg,.mp3,.wav,.m4a" class="hidden" onchange="handleFileSelection()" />
+                    <!-- File input element hidden (supports Docs, Images, Audio) -->
+                    <input type="file" id="file-input" multiple accept=".pdf,.docx,.csv,.png,.jpg,.jpeg,.mp3,.wav,.m4a,.txt" class="hidden" onchange="handleFileSelection()" />
                     
                     <!-- Clip icon -->
                     <button onclick="document.getElementById('file-input').click()" class="mr-3 text-gray-400 hover:text-gray-200 transition-colors">
@@ -61,7 +105,7 @@
         </footer>
     </div>
 
-    <!-- Right Sidebar -->
+    <!-- Right Sidebar for Reasoning / Trace -->
     <div class="w-80 border-l border-[#3c3d3e] bg-[#171717] flex flex-col h-full shrink-0">
         <div class="px-4 py-4 border-b border-[#3c3d3e]">
             <h2 class="text-sm font-semibold tracking-wide text-gray-300">Agent Reasoning Logs</h2>
@@ -80,11 +124,11 @@
         
         let chatHistory = [];
         let stagedFiles = [];
+        let activeDocumentText = ""; // Client-side document context memory store
 
         function handleFileSelection() {
             const files = Array.from(fileInput.files);
             files.forEach(file => {
-                // Prevent duplicate staging
                 if (!stagedFiles.some(f => f.name === file.name)) {
                     stagedFiles.push(file);
                 }
@@ -126,7 +170,7 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `flex items-start gap-4 max-w-3xl mx-auto ${isUser ? 'flex-row-reverse' : ''}`;
             messageDiv.innerHTML = `
-                <div class="w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center text-white font-bold shrink-0 text-sm">${initial}</div>
+                <div class="w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center text-white font-bold shrink-0 text-sm shadow-sm">${initial}</div>
                 <div class="${bubbleBg} border rounded-2xl px-4 py-3 shadow-md max-w-[85%]">
                     <p class="text-sm leading-relaxed whitespace-pre-wrap">${content}</p>
                 </div>
@@ -171,10 +215,8 @@
 
         async function sendMessage() {
             const text = userInput.value.trim();
-            // Prevent sending if no text query is provided
             if (!text && stagedFiles.length === 0) return;
 
-            // Formulate user bubble string showing file attachments
             let displayMsg = text;
             if (stagedFiles.length > 0) {
                 const fileListStr = stagedFiles.map(f => `📎 [${f.name}]`).join('\n');
@@ -185,16 +227,19 @@
             userInput.value = '';
             appendLoadingIndicator();
 
-            // Construct FormData payload
+            // Construct Multipart Form Data
             const formData = new FormData();
-            formData.append('query', text || "Summarize the attached document");
+            formData.append('query', text);
             formData.append('history', JSON.stringify(chatHistory));
+            
+            // Pass the retained document context from previous turns
+            formData.append('extracted_text', activeDocumentText);
             
             stagedFiles.forEach(file => {
                 formData.append('files', file);
             });
 
-            // Reset file states
+            // Reset upload staging
             stagedFiles = [];
             renderFileChips();
             fileInput.value = '';
@@ -212,6 +257,11 @@
                     appendMessage('assistant', data.output);
                     updateLogs(data.reasoning_trace, data.tool_used);
                     
+                    // Retain the extracted text context across turns
+                    if (data.extracted_text) {
+                        activeDocumentText = data.extracted_text;
+                    }
+
                     chatHistory.push({ role: 'user', content: text || "Uploaded document analysis" });
                     chatHistory.push({ role: 'assistant', content: data.output });
 

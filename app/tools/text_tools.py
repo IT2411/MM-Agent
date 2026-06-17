@@ -1,3 +1,4 @@
+import re
 from typing import Dict, Any
 from google import genai
 from google.genai import types
@@ -8,11 +9,20 @@ from app.utils.retry import execute_with_retry
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 def format_history_context(context: Dict[str, Any]) -> str:
+    """Helper to format previous turns safely as reference context for tools."""
     history_str = ""
     if context and "history" in context:
         for msg in context["history"][-5:]:
-            role_name = "USER" if msg.role == "user" else "ASSISTANT"
-            history_str += f"{role_name}: {msg.content}\n"
+            # Defensive check for dict vs object structures
+            if isinstance(msg, dict):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+            else:
+                role = getattr(msg, "role", "user")
+                content = getattr(msg, "content", "")
+            
+            role_name = "USER" if role == "user" else "ASSISTANT"
+            history_str += f"{role_name}: {content}\n"
     return history_str
 
 
@@ -23,10 +33,13 @@ class ConversationalTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Used for general conversation, greetings, or friendly, helpful responses to general questions."
+        return (
+            "Used for general conversation, greetings, and answering specific informational questions, "
+            "lookups, or Q&A queries about a provided document or context (e.g., 'What are the action items?', "
+            "'Who is mentioned in this file?', 'What was the decision on budget?')."
+        )
 
     async def execute(self, input_text: str, context: Dict[str, Any] = None) -> str:
-        # Enforce English responses
         config = types.GenerateContentConfig(
             system_instruction=(
                 "You are a friendly and helpful conversational assistant. "
@@ -39,11 +52,18 @@ class ConversationalTool(BaseTool):
         contents = []
         if context and "history" in context:
             for msg in context["history"][-6:]:
-                role = "user" if msg.role == "user" else "model"
+                # Defensive check for dict vs object structures
+                if isinstance(msg, dict):
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                else:
+                    role = getattr(msg, "role", "user")
+                    content = getattr(msg, "content", "")
+                
                 contents.append(
                     types.Content(
-                        role=role,
-                        parts=[types.Part.from_text(text=msg.content)]
+                        role="user" if role == "user" else "model",
+                        parts=[types.Part.from_text(text=content)]
                     )
                 )
 
@@ -75,26 +95,20 @@ class SummarizeTool(BaseTool):
     async def execute(self, input_text: str, context: Dict[str, Any] = None) -> str:
         history_context = format_history_context(context)
 
-        # Robust block-parsing to extract the duration line following the header
         duration_info = ""
         combined_corpus = f"{history_context}\n{input_text}"
         if "--- Audio Duration ---" in combined_corpus:
-            try:
-                parts = combined_corpus.split("--- Audio Duration ---")
-                if len(parts) > 1:
-                    # Grab the text block immediately following the header and get its first line
-                    duration_line = parts[1].strip().split("\n")[0].strip()
-                    if duration_line:
-                        duration_info = f"\n\n**Audio Duration**: {duration_line}"
-            except Exception as e:
-                # Graceful degradation in case of unexpected parsing errors
-                duration_info = ""
+            for line in combined_corpus.split("\n"):
+                if "Audio Duration" in line or (line.strip() and "min" in line and "sec" in line):
+                    clean_line = line.replace("--- Audio Duration ---", "").replace("---", "").strip()
+                    duration_info = f"\n\n**Audio Duration**: {clean_line}"
+                    break
 
         system_prompt = (
             "You are a strict summarization engine. You MUST write your entire response in English only.\n"
-            "If the user's latest query is a short follow-up instruction (like 'summary' or 'summarize this'), "
-            "inspect the conversation history to locate the main body of text, document contents, or data previously discussed, "
-            "and perform the summary on that content.\n\n"
+            "Always prioritize summarizing the text provided in the '[Extracted Document Context]' or current input first.\n"
+            "Only if the latest user query is a short follow-up instruction (like 'summary' or 'summarize this') and lacks context, "
+            "inspect the conversation history to locate the main body of text previously discussed.\n\n"
             "You must output exactly in this format:\n\n"
             "1-Line Summary:\n[Insert a clear, concise one-line summary here]\n\n"
             "Key Points:\n"
@@ -123,7 +137,6 @@ class SummarizeTool(BaseTool):
         )
         
         final_summary = response.text.strip()
-        # Append duration metadata safely
         if duration_info:
             final_summary += duration_info
             
@@ -144,7 +157,8 @@ class SentimentTool(BaseTool):
 
         system_prompt = (
             "Analyze the sentiment of the text. You MUST write your entire response in English only.\n"
-            "If the latest input is a short follow-up command (like 'sentiment' or 'analyze this'), "
+            "Always prioritize analyzing the text provided in the '[Extracted Document Context]' or current input first.\n"
+            "Only if the latest input is a short follow-up command (like 'sentiment' or 'analyze this') and lacks context, "
             "look at the conversation history to identify the target text being discussed and perform the analysis on that target.\n\n"
             "Respond using only the following format:\n"
             "Label: [Positive / Negative / Neutral]\n"
@@ -184,8 +198,9 @@ class CodeExplainTool(BaseTool):
         history_context = format_history_context(context)
 
         system_prompt = (
-            "Analyze and explain the code snippet. You MUST write your entire response in English only.\n"
-            "If the latest query is a short command (like 'explain this code' or 'explain it'), "
+            "Analyze and explain the provided code snippet. You MUST write your entire response in English only.\n"
+            "Always prioritize analyzing the code provided in the '[Extracted Document Context]' or current input first.\n"
+            "Only if the latest input is a short command (like 'explain this code' or 'explain it') and lacks context, "
             "look at the conversation history to locate the code block previously shared, and analyze that code.\n\n"
             "Format your response exactly as follows:\n"
             "1. Language Detected: [Name of language]\n"
@@ -211,3 +226,98 @@ class CodeExplainTool(BaseTool):
             config=config
         )
         return response.text.strip()
+    
+        
+class YouTubeTranscriptTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "youtube_transcript_fetching"
+
+    @property
+    def description(self) -> str:
+        return "Used only when the user explicitly asks to fetch, transcribe, summarize, or analyze the content of a YouTube video or URL."
+
+    def _extract_video_id(self, text: str) -> str:
+        """Parses standard, shortened, mobile, and embed YouTube URLs to extract the 11-char Video ID."""
+        patterns = [
+            r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
+            r"youtu\.be/([a-zA-Z0-9_-]{11})",
+            r"youtube\.com/embed/([a-zA-Z0-9_-]{11})",
+            r"youtube\.com/v/([a-zA-Z0-9_-]{11})",
+            r"youtube\.com/watch\?.+&v=([a-zA-Z0-9_-]{11})"
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        return ""
+
+    async def execute(self, input_text: str, context: Dict[str, Any] = None) -> str:
+        video_id = self._extract_video_id(input_text)
+        if not video_id:
+            return "Error: No valid YouTube URL detected in the query or document context."
+
+        transcript_list = None
+        errors_logged = []
+
+        try:
+            import youtube_transcript_api
+            
+            # Resolve the correct API reference
+            api_module = youtube_transcript_api
+            if hasattr(api_module, "YouTubeTranscriptApi"):
+                api_class = getattr(api_module, "YouTubeTranscriptApi")
+            else:
+                api_class = api_module
+
+            # Attempt 1: Standard 'get_transcript' static call
+            if hasattr(api_class, "get_transcript"):
+                try:
+                    transcript_list = api_class.get_transcript(video_id, languages=['en', 'hi'])
+                except Exception as e:
+                    errors_logged.append(f"get_transcript failed: {str(e)}")
+
+            # Attempt 2: Static 'fetch' call (matching your system's package attributes)
+            if transcript_list is None and hasattr(api_class, "fetch"):
+                try:
+                    transcript_list = api_class.fetch(video_id)
+                except Exception as e:
+                    errors_logged.append(f"fetch (static) failed: {str(e)}")
+
+            # Attempt 3: Instance 'fetch' call
+            if transcript_list is None and hasattr(api_class, "fetch"):
+                try:
+                    instance = api_class()
+                    transcript_list = instance.fetch(video_id)
+                except Exception as e:
+                    errors_logged.append(f"fetch (instance) failed: {str(e)}")
+
+            # Handle execution failure across all modes
+            if transcript_list is None:
+                return (
+                    f"Error: Failed to fetch transcript using all available methods (get_transcript, fetch).\n"
+                    f"System errors encountered: {errors_logged}.\n"
+                    "Please verify if subtitles/captions are enabled for this video."
+                )
+
+            # Robustly format the transcript depending on if it is a list of dicts, strings, or a raw string
+            if isinstance(transcript_list, list):
+                if len(transcript_list) > 0 and isinstance(transcript_list[0], dict) and 'text' in transcript_list[0]:
+                    raw_transcript = " ".join([entry['text'] for entry in transcript_list])
+                else:
+                    raw_transcript = " ".join([str(entry) for entry in transcript_list])
+            else:
+                raw_transcript = str(transcript_list)
+
+        except Exception as e:
+            return f"Error executing YouTube transcript module: {str(e)}"
+
+        # Tool Chaining
+        normalized_input = input_text.lower()
+        if "summar" in normalized_input or "bullet" in normalized_input:
+            from app.tools.registry import registry
+            summarize_tool = registry.get_tool("summarization")
+            if summarize_tool:
+                return await summarize_tool.execute(raw_transcript, context=context)
+
+        return f"--- YouTube Transcript (Video ID: {video_id}) ---\n{raw_transcript}"

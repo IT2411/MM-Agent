@@ -174,6 +174,9 @@ async def extract_text_from_file(file: UploadFile) -> str:
             return extract_text_from_docx(content)
         elif filename.endswith(".csv"):
             return extract_text_from_csv(content)
+        elif filename.endswith(".txt"):
+            # Natively decode plain text files safely clearing non-unicode anomalies
+            return content.decode("utf-8", errors="ignore").strip()
         elif filename.endswith(".png"):
             return await extract_text_from_image(content, "image/png")
         elif filename.endswith((".jpg", ".jpeg")):
