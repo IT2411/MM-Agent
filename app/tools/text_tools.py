@@ -35,8 +35,8 @@ class ConversationalTool(BaseTool):
     def description(self) -> str:
         return (
             "Used for general conversation, greetings, and answering specific informational questions, "
-            "lookups, or Q&A queries about a provided document or context (e.g., 'What are the action items?', "
-            "'Who is mentioned in this file?', 'What was the decision on budget?')."
+            "lookups, general overviews, or Q&A queries about a provided document/context (e.g., 'What are the action items?', "
+            "'What is this document about?', 'Explain what this file means in short')."
         )
 
     async def execute(self, input_text: str, context: Dict[str, Any] = None) -> str:
@@ -90,19 +90,14 @@ class SummarizeTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Used to summarize a body of text or a document. Produces a specific, rigid 3-part format."
+        return (
+            "Used ONLY when the user explicitly asks for a 'summary', 'summarize', 'condensation', 'bullets', "
+            "or 'bullet points' of a text/document. Do NOT use this tool for general questions about a document "
+            "such as 'What is this document about?' or 'Explain this file' (route those to conversational_answering)."
+        )
 
     async def execute(self, input_text: str, context: Dict[str, Any] = None) -> str:
         history_context = format_history_context(context)
-
-        duration_info = ""
-        combined_corpus = f"{history_context}\n{input_text}"
-        if "--- Audio Duration ---" in combined_corpus:
-            for line in combined_corpus.split("\n"):
-                if "Audio Duration" in line or (line.strip() and "min" in line and "sec" in line):
-                    clean_line = line.replace("--- Audio Duration ---", "").replace("---", "").strip()
-                    duration_info = f"\n\n**Audio Duration**: {clean_line}"
-                    break
 
         system_prompt = (
             "You are a strict summarization engine. You MUST write your entire response in English only.\n"
@@ -116,7 +111,10 @@ class SummarizeTool(BaseTool):
             "- [Point 2]\n"
             "- [Point 3]\n\n"
             "Detailed Summary:\n[Insert a paragraph exactly 5 sentences long summarizing the details.]\n\n"
-            "Do not add any additional introductory or concluding text."
+            "Do not add any additional introductory or concluding text.\n\n"
+            "Metadata Constraint: If the input context contains an audio duration value (look for 'Audio Duration' or 'DURATION:'), "
+            "you MUST append '**Audio Duration**: [insert the exact extracted duration value (e.g., 5 min 27 sec)]' "
+            "as a separate, bolded line at the very end of your summary response."
         )
 
         prompt = (
@@ -135,12 +133,7 @@ class SummarizeTool(BaseTool):
             contents=prompt,
             config=config
         )
-        
-        final_summary = response.text.strip()
-        if duration_info:
-            final_summary += duration_info
-            
-        return final_summary
+        return response.text.strip()
 
 
 class SentimentTool(BaseTool):

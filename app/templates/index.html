@@ -6,6 +6,9 @@
     <title>Agentic Workspace</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Marked.js CDN (High-Performance Markdown Compiler) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
     <style>
         /* Custom scrollbar behaviors */
         ::-webkit-scrollbar {
@@ -17,6 +20,63 @@
         ::-webkit-scrollbar-thumb {
             background: #4b5563;
             border-radius: 3px;
+        }
+
+        /* Prose styling to render rich markdown content inside assistant bubbles */
+        .prose-dark p {
+            margin-bottom: 12px;
+        }
+        .prose-dark p:last-child {
+            margin-bottom: 0;
+        }
+        .prose-dark strong {
+            color: #ffffff;
+            font-weight: 600;
+        }
+        .prose-dark ul {
+            list-style-type: disc;
+            margin-left: 24px;
+            margin-bottom: 12px;
+        }
+        .prose-dark ol {
+            list-style-type: decimal;
+            margin-left: 24px;
+            margin-bottom: 12px;
+        }
+        .prose-dark li {
+            margin-bottom: 6px;
+            text-align: justify;
+        }
+        .proice-dark h1, .prose-dark h2, .prose-dark h3, .prose-dark h4 {
+            color: #ffffff;
+            font-weight: 600;
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .prose-dark h3 {
+            font-size: 1rem;
+            border-bottom: 1px solid #3c3d3e;
+            padding-bottom: 2px;
+        }
+        /* Style for embedded code blocks in assistant responses */
+        .prose-dark pre {
+            background-color: #1e1e1e;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #3c3d3e;
+            overflow-x: auto;
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin: 10px 0;
+            color: #e5c07b;
+        }
+        .prose-dark code {
+            font-family: monospace;
+            background-color: #2b2b2b;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #e06c75;
         }
     </style>
 </head>
@@ -84,7 +144,7 @@
                 <!-- Input box -->
                 <div class="flex items-center bg-[#2f2f2f] rounded-2xl border border-[#3c3d3e] shadow-lg overflow-hidden px-4 py-3">
                     
-                    <!-- File input element hidden (supports Docs, Images, Audio) -->
+                    <!-- File input element hidden -->
                     <input type="file" id="file-input" multiple accept=".pdf,.docx,.csv,.png,.jpg,.jpeg,.mp3,.wav,.m4a,.txt" class="hidden" onchange="handleFileSelection()" />
                     
                     <!-- Clip icon -->
@@ -105,7 +165,7 @@
         </footer>
     </div>
 
-    <!-- Right Sidebar for Reasoning / Trace -->
+    <!-- Right Sidebar -->
     <div class="w-80 border-l border-[#3c3d3e] bg-[#171717] flex flex-col h-full shrink-0">
         <div class="px-4 py-4 border-b border-[#3c3d3e]">
             <h2 class="text-sm font-semibold tracking-wide text-gray-300">Agent Reasoning Logs</h2>
@@ -124,7 +184,7 @@
         
         let chatHistory = [];
         let stagedFiles = [];
-        let activeDocumentText = ""; // Client-side document context memory store
+        let activeDocumentText = ""; // Context memory store
 
         function handleFileSelection() {
             const files = Array.from(fileInput.files);
@@ -167,12 +227,15 @@
             const bubbleBg = isUser ? 'bg-[#3a3a3c] border-transparent' : 'bg-[#2f2f2f] border-[#3c3d3e]';
             const avatarBg = isUser ? 'bg-teal-600' : 'bg-indigo-600';
 
+            // Compile markdown inside assistant responses dynamically
+            const renderedContent = isUser ? content : marked.parse(content);
+
             const messageDiv = document.createElement('div');
             messageDiv.className = `flex items-start gap-4 max-w-3xl mx-auto ${isUser ? 'flex-row-reverse' : ''}`;
             messageDiv.innerHTML = `
                 <div class="w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center text-white font-bold shrink-0 text-sm shadow-sm">${initial}</div>
-                <div class="${bubbleBg} border rounded-2xl px-4 py-3 shadow-md max-w-[85%]">
-                    <p class="text-sm leading-relaxed whitespace-pre-wrap">${content}</p>
+                <div class="${bubbleBg} border rounded-2xl px-5 py-3 shadow-md max-w-[85%]">
+                    <div class="text-sm leading-relaxed ${isUser ? 'whitespace-pre-wrap' : 'prose-dark'}">${renderedContent}</div>
                 </div>
             `;
             chatFeed.appendChild(messageDiv);
@@ -227,19 +290,15 @@
             userInput.value = '';
             appendLoadingIndicator();
 
-            // Construct Multipart Form Data
             const formData = new FormData();
             formData.append('query', text);
             formData.append('history', JSON.stringify(chatHistory));
-            
-            // Pass the retained document context from previous turns
-            formData.append('extracted_text', activeDocumentText);
             
             stagedFiles.forEach(file => {
                 formData.append('files', file);
             });
 
-            // Reset upload staging
+            // Reset file states
             stagedFiles = [];
             renderFileChips();
             fileInput.value = '';
@@ -257,11 +316,6 @@
                     appendMessage('assistant', data.output);
                     updateLogs(data.reasoning_trace, data.tool_used);
                     
-                    // Retain the extracted text context across turns
-                    if (data.extracted_text) {
-                        activeDocumentText = data.extracted_text;
-                    }
-
                     chatHistory.push({ role: 'user', content: text || "Uploaded document analysis" });
                     chatHistory.push({ role: 'assistant', content: data.output });
 

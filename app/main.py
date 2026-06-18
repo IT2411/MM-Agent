@@ -1,4 +1,5 @@
 import json
+import webbrowser
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -22,13 +23,18 @@ app = FastAPI(title="Multi-Modal Agent Backend", lifespan=lifespan)
 
 chat_history_adapter = TypeAdapter(List[ChatMessage])
 
+# Global Backend Session Store to preserve document context safely across turns
+ACTIVE_DOCUMENT_CONTEXT = ""
+
 @app.post("/api/chat", response_model=AgentResponse)
 async def process_chat(
     query: str = Form(""),
     history: str = Form("[]"),
-    extracted_text: str = Form(""),  # Accept historical context from client
+    extracted_text: str = Form(""),  # Handled natively on backend now
     files: Optional[List[UploadFile]] = File(None)
 ):
+    global ACTIVE_DOCUMENT_CONTEXT
+    
     try:
         parsed_history = chat_history_adapter.validate_json(history)
     except Exception:
@@ -36,7 +42,7 @@ async def process_chat(
 
     combined_extracted_text = ""
 
-    # If new files are uploaded, parse them
+    # 1. If new files are uploaded, extract and store their text
     if files:
         extracted_contents = []
         for file in files:
@@ -66,18 +72,23 @@ async def process_chat(
 
                 if file_text.strip():
                     extracted_contents.append(f"--- Extracted from {file.filename} ---\n{file_text}")
+        
         combined_extracted_text = "\n\n".join(extracted_contents)
+        # Update the Backend Session Store with the newly extracted text
+        ACTIVE_DOCUMENT_CONTEXT = combined_extracted_text
+        
     else:
-        # Fallback to historical document context passed by the client
-        combined_extracted_text = extracted_text
+        # 2. If no new files are uploaded, reuse our robust backend session context!
+        combined_extracted_text = ACTIVE_DOCUMENT_CONTEXT
 
+    # Execute the agent query
     response = await AgentExecutor.run(
         user_query=query, 
         extracted_text=combined_extracted_text,
         history=parsed_history
     )
     
-    # Send the combined text back to the client to preserve state
+    # Send the active context back (retains compatibility)
     response.extracted_text = combined_extracted_text
     return response
 

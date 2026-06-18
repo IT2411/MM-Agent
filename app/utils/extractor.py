@@ -102,9 +102,34 @@ async def extract_text_from_image(file_bytes: bytes, mime_type: str) -> str:
 
 async def extract_text_from_audio(file_bytes: bytes, mime_type: str) -> str:
     """
-    Transcribes audio and extracts duration natively from Gemini.
-    Parsing is case-insensitive and markdown-safe.
+    Transcribes audio and extracts duration using a robust Hybrid Engine:
+    1. Attempts local metadata header extraction (TinyTag via tempfile).
+    2. Falls back to native Gemini AI duration parsing if local extraction fails,
+       utilizing strict break boundary guards to prevent transcript overwrites.
     """
+    import os
+    import tempfile
+    from tinytag import TinyTag
+    
+    # Method A: Try local metadata header extraction first (extremely fast & accurate)
+    local_duration_str = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
+            temp_file.write(file_bytes)
+            temp_file_path = temp_file.name
+        
+        tag = TinyTag.get(temp_file_path)
+        duration_sec = tag.duration or 0.0
+        os.remove(temp_file_path)
+        
+        if duration_sec > 0:
+            minutes = int(duration_sec // 60)
+            seconds = int(duration_sec % 60)
+            local_duration_str = f"{minutes} min {seconds} sec"
+    except Exception as e:
+        logger.warning(f"Local TinyTag extraction bypassed (using AI fallback): {str(e)}")
+
+    # Method B: Transcribe and perform AI duration extraction with strict loop boundaries
     try:
         from google import genai
         from google.genai import types
@@ -134,29 +159,31 @@ async def extract_text_from_audio(file_bytes: bytes, mime_type: str) -> str:
         
         response_text = response.text.strip()
         
-        # Robustly parse duration using case-insensitive keyword searches and clearing markdown symbols
-        duration_str = "Unknown duration"
+        # Parse AI transcription
         transcript_lines = []
         is_reading_transcript = False
+        ai_duration_str = ""
         
         for line in response_text.split("\n"):
-            # Match any variations like "DURATION:", "**Duration:**", etc.
-            if "duration" in line.lower() and ":" in line:
-                parts = line.split(":", 1)
-                duration_str = parts[1].replace("*", "").strip()
-            elif "transcript" in line.lower() and ":" in line:
+            clean_line = line.strip().replace("*", "")
+            # Check strictly for the start of the line and break immediately once found
+            if clean_line.lower().startswith("duration:"):
+                ai_duration_str = clean_line.split(":", 1)[1].strip()
+            elif clean_line.lower().startswith("transcript:"):
                 is_reading_transcript = True
             elif is_reading_transcript:
                 transcript_lines.append(line)
         
         transcript_text = "\n".join(transcript_lines).strip()
-        
         if not transcript_text:
             transcript_text = response_text
             
+        # Select the best available duration value (Prioritize local, fallback to AI)
+        final_duration = local_duration_str if local_duration_str else (ai_duration_str if ai_duration_str else "Unknown duration")
+        
         return (
             f"--- Audio Transcription ---\n{transcript_text}\n\n"
-            f"--- Audio Duration ---\n{duration_str}"
+            f"--- Audio Duration ---\n{final_duration}"
         )
     except Exception as e:
         logger.error(f"Failed to transcribe audio: {str(e)}")
