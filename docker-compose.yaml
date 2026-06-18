@@ -1,0 +1,12 @@
+services:
+  agentic-workspace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentic_workspace
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.1-flash-lite}
+    restart: always
