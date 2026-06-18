@@ -5,6 +5,10 @@ A production-grade, agentic web application designed to analyze unstructured inp
 
 This system is built with **FastAPI** for the backend engine and integrates with Google’s official **`google-genai` SDK** (configured for `gemini-3.1-flash-lite`).
 
+### 🌐 Live Deployment URL: [https://mm-agent.onrender.com](https://mm-agent.onrender.com)
+
+> ⚠️ **Notice on Render Free Tier "Cold Start"**: Because this application is hosted on Render's Free Tier, the container automatically goes to sleep after 15 minutes of inactivity. When clicking the live link, **please allow 30–50 seconds for the server to wake up and spin up the container**. Once awake, all interactions and file analyses will respond instantly.
+
 ---
 
 ## 1. Project Directory Structure
