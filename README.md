@@ -117,10 +117,10 @@ This application is fully Dockerized for reproducible deployment. To build and r
 
 Verify your installation using the core scenarios defined in the guidelines:
 
-### Test Case 1: Audio Transcription + Summary
+### Test Case 1: Audio Summary
 - **Input**: Upload an `.mp3`, `.wav`, or `.m4a` file.
 - **Query**: `"Summarize"`
-- **Output**: The transcript is logged, and the summarization tool generates a structured summary with the precise calculated audio duration appended at the very end.
+- **Output**: The summarization tool generates a structured summary.
 
 ![Test Case 1 Output](assets/audio-transcription-n-summary.png)
 
